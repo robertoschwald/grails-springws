@@ -19,6 +19,8 @@ package org.codehaus.groovy.grails.plugins.spring.ws
 import javax.xml.transform.Source
 import org.springframework.ws.server.endpoint.PayloadEndpoint
 import org.springframework.xml.transform.StringSource
+import org.codehaus.groovy.grails.commons.GrailsClassUtils
+
 
 /**
  * Abstract Implementation of   {@link PayloadEndpoint}   that delegates to an endpoint artefact
@@ -34,7 +36,8 @@ public abstract class AbstractEndpointAdapter implements PayloadEndpoint {
 
     public Source invoke(Source request) throws Exception {
         Writer responseWriter = createResponseWriter()
-        endpointImpl.invoke(createRequest(request), createResponse(responseWriter))
+		def methodName = getMethodToInvoke(request)
+		endpointImpl."${methodName}"(createRequest(request), createResponse(responseWriter))
         return new StringSource(responseWriter.toString())
     }
 
@@ -44,4 +47,5 @@ public abstract class AbstractEndpointAdapter implements PayloadEndpoint {
 
     protected abstract Object createResponse(Writer writer)
 
+	protected abstract String getMethodToInvoke(Source request)
 }

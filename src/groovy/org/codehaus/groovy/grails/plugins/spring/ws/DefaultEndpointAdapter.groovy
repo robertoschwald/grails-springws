@@ -16,12 +16,13 @@
 
 package org.codehaus.groovy.grails.plugins.spring.ws
 
-import groovy.xml.MarkupBuilder
+
 import javax.xml.transform.Source
-import javax.xml.transform.Transformer
-import javax.xml.transform.TransformerFactory
 import org.codehaus.groovy.grails.plugins.spring.ws.AbstractEndpointAdapter
-import org.springframework.xml.transform.StringResult
+import org.codehaus.groovy.grails.plugins.spring.ws.DefaultEndpointAdapter;
+import org.codehaus.groovy.grails.plugins.spring.ws.tools.TransformerUtils
+import groovy.xml.MarkupBuilder
+
 
 /**
  * Default endpoint adapter that transforms the request into an 
@@ -33,17 +34,15 @@ import org.springframework.xml.transform.StringResult
  *
  */
 public class DefaultEndpointAdapter extends AbstractEndpointAdapter {
-    private final TransformerFactory transformerFactory
+	private final String ENDPOINT_DEFAULT_METHOD = "invoke"
+	private TransformerUtils transformerUtils
 
-    public DefaultEndpointAdapter() {
-        this.transformerFactory = TransformerFactory.newInstance();
-    }
-
+	DefaultEndpointAdapter(){
+		transformerUtils = new TransformerUtils()
+	}
+	
     protected Object createRequest(Source request) throws Exception {
-		def transformer = transformerFactory.newTransformer()
-        StringResult result = new StringResult()
-        transformer.transform(request, result)
-        return new XmlSlurper().parseText(result.toString())
+		transformerUtils.transformSource(request)
     }
 
     protected Writer createResponseWriter() {
@@ -53,4 +52,8 @@ public class DefaultEndpointAdapter extends AbstractEndpointAdapter {
     protected Object createResponse(Writer writer) {
         return new MarkupBuilder(writer)
     }
+	
+	protected String getMethodToInvoke(Source request) {
+		ENDPOINT_DEFAULT_METHOD
+	}
 }

@@ -19,6 +19,8 @@ import org.codehaus.groovy.grails.plugins.spring.ws.InterceptorsConfigArtefactHa
 import org.codehaus.groovy.grails.plugins.spring.ws.GrailsEndpointClass
 import org.codehaus.groovy.grails.plugins.spring.ws.EndpointInterceptorAdapter
 import org.codehaus.groovy.grails.plugins.spring.ws.DefaultEndpointAdapter
+import org.codehaus.groovy.grails.plugins.spring.ws.PayloadRootEndpointAdapter
+
 import org.codehaus.groovy.grails.plugins.spring.ws.ReloadablePayloadRootQNameEndpointMapping
 
 
@@ -223,24 +225,67 @@ Spring Web Services plugin allows your Grails application to provide and consume
         reload(event.application, event.ctx)
     }
     
+		private isCustomRequestElementInEndpoint(endpointClass){
+				GrailsClassUtils.isStaticProperty(endpointClass.getClazz(), 'requestElement')
+				}
+			
+				private isPayloadRootEndpoint(endpointClass){
+					GrailsClassUtils.isStaticProperty(endpointClass.getClazz(), 'requestElements')
+				}
+			
+				private createPayloadRootEndpointMapping(applicationContext, endpointClass){
+					def adapter = new PayloadRootEndpointAdapter(endpointImpl: getEndpointBean(applicationContext, endpointClass), name: endpointClass.logicalPropertyName)
+					def defaultMappings = [:]
+					def requestElements = endpointClass.getClazz().requestElements
+					requestElements.each {
+						defaultMappings["{${endpointClass.getClazz().namespace}}${it.trim()}Request"] = adapter
+					}
+					defaultMappings
+				}
+			
+				private createDefaultEndpointMapping(applicationContext, endpointClass){
+					def adapter = new DefaultEndpointAdapter(endpointImpl: getEndpointBean(applicationContext, endpointClass), name: endpointClass.logicalPropertyName)
+					def defaultMappings = [:]
+					def requestElement
+					if(isCustomRequestElementInEndpoint(endpointClass)){
+						requestElement= endpointClass.getClazz().requestElement
+					}else{
+						requestElement= "${endpointClass.name}Request"
+					}
+					defaultMappings["{${endpointClass.getClazz().namespace}}${requestElement}"] = adapter
+				}
+			
+				private getEndpointBean(applicationContext, endpointClass){
+					applicationContext.getBean("${endpointClass.fullName}")
+				}
+			
+				private getEndpointMappingBean(applicationContext){
+					applicationContext.getBean('payloadRootQNameEndpointMapping')
+				}
+			
     private reload(GrailsApplication application, applicationContext) {
         log.info("reloadEndpoints")
         def defaultMappings = [:]
         for(endpointClass in application.getArtefacts(EndpointArtefactHandler.TYPE)) {
-            def endpoint = applicationContext.getBean("${endpointClass.fullName}")
-            def adapter= new DefaultEndpointAdapter(endpointImpl: endpoint, name: endpointClass.logicalPropertyName)
-            def requestElement
-            if(GrailsClassUtils.isStaticProperty(endpointClass.getClazz(), 'requestElement')){
-                requestElement= endpointClass.getClazz().requestElement
+//            def endpoint = applicationContext.getBean("${endpointClass.fullName}")
+//            def adapter= new DefaultEndpointAdapter(endpointImpl: endpoint, name: endpointClass.logicalPropertyName)
+//            def requestElement
+//            if(GrailsClassUtils.isStaticProperty(endpointClass.getClazz(), 'requestElement')){
+//                requestElement= endpointClass.getClazz().requestElement
+					if(isPayloadRootEndpoint(endpointClass)){
+								defaultMappings = createPayloadRootEndpointMapping(applicationContext, endpointClass)
             }else{
                 requestElement= "${endpointClass.name}Request"
+								defaultMappings = createDefaultEndpointMapping(applicationContext, endpointClass)
             }
             defaultMappings["{${endpointClass.getClazz().namespace}}${requestElement}"] = adapter
         }
 
         if (log.debugEnabled) log.debug("resulting mappings: ${defaultMappings}")
-        applicationContext.getBean('payloadRootQNameEndpointMapping').registerEndpoints(defaultMappings)
-
+        // applicationContext.getBean('payloadRootQNameEndpointMapping').registerEndpoints(defaultMappings)
+				getEndpointMappingBean(applicationContext).registerEndpoints(defaultMappings)
+				
+				
         log.info("reloadInterceptors")
         def interceptors = []
         for(ic in application.getArtefacts(InterceptorsConfigArtefactHandler.TYPE)) {
@@ -390,8 +435,8 @@ Spring Web Services plugin allows your Grails application to provide and consume
         def servlets = xml.servlet
         servlets[servlets.size() - 1] + {
             servlet {
+            	  'servlet-name'("web-services")
                 'display-name'("web-services")
-                'servlet-name'("web-services")
                 'servlet-class'("org.springframework.ws.transport.http.MessageDispatcherServlet")
             }
         }

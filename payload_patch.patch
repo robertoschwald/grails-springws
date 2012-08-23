@@ -1,0 +1,254 @@
+Index: SpringwsGrailsPlugin.groovy
+===================================================================
+--- SpringwsGrailsPlugin.groovy	(revision 65377)
++++ SpringwsGrailsPlugin.groovy	(working copy)
+@@ -19,9 +19,9 @@
+ import org.codehaus.groovy.grails.plugins.spring.ws.GrailsEndpointClass
+ import org.codehaus.groovy.grails.plugins.spring.ws.EndpointInterceptorAdapter
+ import org.codehaus.groovy.grails.plugins.spring.ws.DefaultEndpointAdapter
++import org.codehaus.groovy.grails.plugins.spring.ws.PayloadRootEndpointAdapter
+ import org.codehaus.groovy.grails.plugins.spring.ws.ReloadablePayloadRootQNameEndpointMapping
+ 
+-
+ import org.codehaus.groovy.grails.plugins.PluginManagerHolder
+ 
+ import org.springframework.beans.factory.config.MethodInvokingFactoryBean
+@@ -226,23 +226,56 @@
+         reload(event.application, event.ctx)
+     }
+ 	
++	private isCustomRequestElementInEndpoint(endpointClass){
++		GrailsClassUtils.isStaticProperty(endpointClass.getClazz(), 'requestElement')
++	}
++	
++	private isPayloadRootEndpoint(endpointClass){
++		GrailsClassUtils.isStaticProperty(endpointClass.getClazz(), 'requestElements')
++	}
++	
++	private createPayloadRootEndpointMapping(applicationContext, endpointClass){
++		def adapter = new PayloadRootEndpointAdapter(endpointImpl: getEndpointBean(applicationContext, endpointClass), name: endpointClass.logicalPropertyName)
++		def defaultMappings = [:]
++		def requestElements = endpointClass.getClazz().requestElements
++		requestElements.each {
++			defaultMappings["{${endpointClass.getClazz().namespace}}${it.trim()}Request"] = adapter
++		}
++		defaultMappings
++	}
++	
++	private createDefaultEndpointMapping(applicationContext, endpointClass){
++		def adapter = new DefaultEndpointAdapter(endpointImpl: getEndpointBean(applicationContext, endpointClass), name: endpointClass.logicalPropertyName)
++		def defaultMappings = [:]
++		def requestElement
++		if(isCustomRequestElementInEndpoint(endpointClass)){
++			requestElement= endpointClass.getClazz().requestElement
++		}else{
++			requestElement= "${endpointClass.name}Request"
++		}
++		defaultMappings["{${endpointClass.getClazz().namespace}}${requestElement}"] = adapter
++	}
++	
++	private getEndpointBean(applicationContext, endpointClass){
++		applicationContext.getBean("${endpointClass.fullName}")
++	}
++	
++	private getEndpointMappingBean(applicationContext){
++		applicationContext.getBean('payloadRootQNameEndpointMapping')
++	}
+     private reload(GrailsApplication application, applicationContext) {
+         log.info("reloadEndpoints")
+         def defaultMappings = [:]
+         for(endpointClass in application.getArtefacts(EndpointArtefactHandler.TYPE)) {
+-            def endpoint = applicationContext.getBean("${endpointClass.fullName}")
+-            def adapter= new DefaultEndpointAdapter(endpointImpl: endpoint, name: endpointClass.logicalPropertyName)
+-            def requestElement
+-            if(GrailsClassUtils.isStaticProperty(endpointClass.getClazz(), 'requestElement')){
+-                requestElement= endpointClass.getClazz().requestElement
++            if(isPayloadRootEndpoint(endpointClass)){
++				defaultMappings = createPayloadRootEndpointMapping(applicationContext, endpointClass)
+             }else{
+-                requestElement= "${endpointClass.name}Request"
++				defaultMappings = createDefaultEndpointMapping(applicationContext, endpointClass)
+             }
+-            defaultMappings["{${endpointClass.getClazz().namespace}}${requestElement}"] = adapter
+         }
+ 
+         if (log.debugEnabled) log.debug("resulting mappings: ${defaultMappings}")
+-        applicationContext.getBean('payloadRootQNameEndpointMapping').registerEndpoints(defaultMappings)
++        getEndpointMappingBean(applicationContext).registerEndpoints(defaultMappings)
+ 
+         log.info("reloadInterceptors")
+         def interceptors = []
+@@ -339,7 +372,7 @@
+                 params['accessDecisionManager'] = accessDecisionManager
+                 f = objectDefinitionSource
+             }
+-          
++			log.debug "Got here"
+             def securityInterceptor = WsSecurityConfigFactory.createInterceptor(params)
+             log.debug "Created WS-Security interceptor: ${securityInterceptor.dump()}"
+             // detect referent endpoints
+@@ -393,8 +426,8 @@
+ 	    def servlets = xml.servlet
+ 	    servlets[servlets.size() - 1] + {
+ 	        servlet {
++	            'servlet-name'("web-services")
+ 	            'display-name'("web-services")
+-	            'servlet-name'("web-services")
+ 	            'servlet-class'("org.springframework.ws.transport.http.MessageDispatcherServlet")
+ 	        }
+ 	    }
+Index: src/groovy/org/codehaus/groovy/grails/plugins/spring/ws/AbstractEndpointAdapter.groovy
+===================================================================
+--- src/groovy/org/codehaus/groovy/grails/plugins/spring/ws/AbstractEndpointAdapter.groovy	(revision 65377)
++++ src/groovy/org/codehaus/groovy/grails/plugins/spring/ws/AbstractEndpointAdapter.groovy	(working copy)
+@@ -19,7 +19,9 @@
+ import javax.xml.transform.Source
+ import org.springframework.ws.server.endpoint.PayloadEndpoint
+ import org.springframework.xml.transform.StringSource
++import org.codehaus.groovy.grails.commons.GrailsClassUtils
+ 
++
+ /**
+  * Abstract Implementation of   {@link PayloadEndpoint}   that delegates to an endpoint artefact
+  * This class provides the hooks for different request and response type strategies
+@@ -34,7 +36,8 @@
+ 
+     public Source invoke(Source request) throws Exception {
+         Writer responseWriter = createResponseWriter()
+-        endpointImpl.invoke(createRequest(request), createResponse(responseWriter))
++		def methodName = getMethodToInvoke(request)
++		endpointImpl."${methodName}"(createRequest(request), createResponse(responseWriter))
+         return new StringSource(responseWriter.toString())
+     }
+ 
+@@ -44,4 +47,5 @@
+ 
+     protected abstract Object createResponse(Writer writer)
+ 
++	protected abstract String getMethodToInvoke(Source request)
+ }
+\ No newline at end of file
+Index: src/groovy/org/codehaus/groovy/grails/plugins/spring/ws/DefaultEndpointAdapter.groovy
+===================================================================
+--- src/groovy/org/codehaus/groovy/grails/plugins/spring/ws/DefaultEndpointAdapter.groovy	(revision 65377)
++++ src/groovy/org/codehaus/groovy/grails/plugins/spring/ws/DefaultEndpointAdapter.groovy	(working copy)
+@@ -16,13 +16,14 @@
+ 
+ package org.codehaus.groovy.grails.plugins.spring.ws
+ 
+-import groovy.xml.MarkupBuilder
++
+ import javax.xml.transform.Source
+-import javax.xml.transform.Transformer
+-import javax.xml.transform.TransformerFactory
+ import org.codehaus.groovy.grails.plugins.spring.ws.AbstractEndpointAdapter
+-import org.springframework.xml.transform.StringResult
++import org.codehaus.groovy.grails.plugins.spring.ws.DefaultEndpointAdapter;
++import org.codehaus.groovy.grails.plugins.spring.ws.tools.TransformerUtils
++import groovy.xml.MarkupBuilder
+ 
++
+ /**
+  * Default endpoint adapter that transforms the request into an 
+  * {@link XmlSlurper} and the response into a {@link MarkupBuilder}
+@@ -33,17 +34,15 @@
+  *
+  */
+ public class DefaultEndpointAdapter extends AbstractEndpointAdapter {
+-    private final TransformerFactory transformerFactory
++	private final String ENDPOINT_DEFAULT_METHOD = "invoke"
++	private TransformerUtils transformerUtils
+ 
+-    public DefaultEndpointAdapter() {
+-        this.transformerFactory = TransformerFactory.newInstance();
+-    }
+-
++	DefaultEndpointAdapter(){
++		transformerUtils = new TransformerUtils()
++	}
++	
+     protected Object createRequest(Source request) throws Exception {
+-		def transformer = transformerFactory.newTransformer()
+-        StringResult result = new StringResult()
+-        transformer.transform(request, result)
+-        return new XmlSlurper().parseText(result.toString())
++		transformerUtils.transformSource(request)
+     }
+ 
+     protected Writer createResponseWriter() {
+@@ -53,4 +52,8 @@
+     protected Object createResponse(Writer writer) {
+         return new MarkupBuilder(writer)
+     }
++	
++	protected String getMethodToInvoke(Source request) {
++		ENDPOINT_DEFAULT_METHOD
++	}
+ }
+\ No newline at end of file
+Index: src/groovy/org/codehaus/groovy/grails/plugins/spring/ws/PayloadRootEndpointAdapter.groovy
+===================================================================
+--- src/groovy/org/codehaus/groovy/grails/plugins/spring/ws/PayloadRootEndpointAdapter.groovy	(revision 0)
++++ src/groovy/org/codehaus/groovy/grails/plugins/spring/ws/PayloadRootEndpointAdapter.groovy	(revision 0)
+@@ -0,0 +1,36 @@
++package org.codehaus.groovy.grails.plugins.spring.ws
++
++
++import javax.xml.transform.Source
++import org.codehaus.groovy.grails.plugins.spring.ws.DefaultEndpointAdapter
++import java.beans.Introspector
++import java.io.Writer;
++import groovy.xml.MarkupBuilder
++import org.codehaus.groovy.grails.plugins.spring.ws.tools.TransformerUtils
++
++class PayloadRootEndpointAdapter extends AbstractEndpointAdapter {
++	private TransformerUtils transformerUtils
++	
++	PayloadRootEndpointAdapter(){
++		transformerUtils = new TransformerUtils()
++	}
++		
++	protected Object createRequest(Source request) throws Exception {
++		transformerUtils.transformSource(request)
++	}
++	
++	protected Writer createResponseWriter() {
++		return new StringWriter()
++	}
++
++	protected Object createResponse(Writer writer) {
++		return new MarkupBuilder(writer)
++	}
++	
++	protected String getMethodToInvoke(Source request) {
++		def rootNodeName = request.getNode().getNodeName()
++		def rootNodeNameWithoutNS = rootNodeName.substring(rootNodeName.indexOf(":")+1)
++		def methodName = rootNodeNameWithoutNS.substring (0, rootNodeNameWithoutNS.lastIndexOf("Request"))
++		def normalizedMethodName = Introspector.decapitalize(methodName)
++	}
++}
+Index: src/groovy/org/codehaus/groovy/grails/plugins/spring/ws/tools/TransformerUtils.groovy
+===================================================================
+--- src/groovy/org/codehaus/groovy/grails/plugins/spring/ws/tools/TransformerUtils.groovy	(revision 0)
++++ src/groovy/org/codehaus/groovy/grails/plugins/spring/ws/tools/TransformerUtils.groovy	(revision 0)
+@@ -0,0 +1,20 @@
++package org.codehaus.groovy.grails.plugins.spring.ws.tools
++
++import javax.xml.transform.TransformerFactory
++import org.springframework.xml.transform.StringResult
++import javax.xml.transform.Source
++class TransformerUtils {
++	private final TransformerFactory transformerFactory;
++	
++	private TransformerUtils(){
++		this.transformerFactory = TransformerFactory.newInstance();
++	}
++	
++	def transformSource(Source request){
++		def transformer = transformerFactory.newTransformer()
++		StringResult result = new StringResult()
++		transformer.transform(request, result)
++		return new XmlSlurper().parseText(result.toString())
++	}
++	
++}
