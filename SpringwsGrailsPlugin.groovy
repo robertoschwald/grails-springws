@@ -45,6 +45,7 @@ import org.springframework.ws.soap.server.endpoint.SimpleSoapExceptionResolver
  * Plugin that introduces some conventions for creating Spring WS based, best practice
  * web services.
  *
+ * @author Robert Oschwald (robertoschwald@googlemail.com)
  * @author Russ Miles (russ@russmiles.com)
  * @author Ivo Houbrechts (ivo@houbrechts-it.be)
  * @author Tareq Abedrabbo (tareq.abedrabbo@gmail.com)
@@ -52,10 +53,10 @@ import org.springframework.ws.soap.server.endpoint.SimpleSoapExceptionResolver
 class SpringwsGrailsPlugin {
 
     // the plugin version
-    def version = "0.5.0"
+    def version = "0.5.1-SNAPSHOT"
 
     // the version or versions of Grails the plugin is designed for
-    def grailsVersion = "1.1 > *"
+    def grailsVersion = "2.0 > *"
 
     // the other plugins this plugin depends on
     // This dependency would be useful, but should be scoped to
@@ -73,14 +74,15 @@ class SpringwsGrailsPlugin {
             'soapui/*'
     ]
 
-    def author = "Russ Miles"
+    def author = "Robert Oschwald"
 
-    def authorEmail = "russ@russmiles.com"
+    def authorEmail = "robertoschwald@googlemail.com"
 
     def title = "Spring WS Plugin"
 
     def description = '''\
 Spring Web Services plugin allows your Grails application to provide and consume contract-driven web services. Feature highlights include: 
+* New in 0.5.1: New maintainer, added multi-methods per endpoint patch (GPSPRINGWS-14). Migrated to Grails 2.0.4. 
 * New in 0.5.0: Added support for Web Services Security (WS-Security)
 * New in 0.2.3: Bug fix release (see http://jira.codehaus.org/browse/GRAILSPLUGINS-1225)
 * New in 0.2.2: Added configuration option to override default Endpoint-name-based strategy for mapping incoming XML payloads to endpoints
