@@ -44,7 +44,7 @@ import org.springframework.xml.xsd.commons.CommonsXsdSchemaCollection
  * @author Tareq Abedrabbo (tareq.abedrabbo@gmail.com)
  */
 class SpringwsGrailsPlugin {
-    def version = "1.0.0"
+    def version = "2.0.0"
     def grailsVersion = "2.0 > *"
     def pluginExcludes = [
             'grails-app/endpoints/*',
