@@ -1,5 +1,5 @@
 /*
- * Copyright 2008-2009 the original author or authors.
+ * Copyright 2008-2014 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,17 +15,22 @@
  */
 
 
-
+import grails.plugin.springsecurity.SpringSecurityUtils
+import grails.plugin.springsecurity.web.access.intercept.InterceptUrlMapFilterInvocationDefinition
 import grails.util.GrailsNameUtils
 import grails.util.Holders
+
 import org.apache.commons.logging.LogFactory
+
 import org.codehaus.groovy.grails.commons.GrailsApplication
 import org.codehaus.groovy.grails.commons.GrailsClassUtils
 import org.codehaus.groovy.grails.plugins.spring.ws.*
 import org.codehaus.groovy.grails.plugins.spring.ws.security.WebServiceInvocationDefinitionSource
 import org.codehaus.groovy.grails.plugins.spring.ws.security.WsSecurityConfigArtefactHandler
 import org.codehaus.groovy.grails.plugins.spring.ws.security.WsSecurityConfigFactory
+
 import org.springframework.beans.factory.config.MethodInvokingFactoryBean
+import org.springframework.security.web.access.intercept.FilterSecurityInterceptor
 import org.springframework.ws.wsdl.wsdl11.DefaultWsdl11Definition
 import org.springframework.xml.xsd.commons.CommonsXsdSchemaCollection
 
@@ -33,6 +38,7 @@ import org.springframework.xml.xsd.commons.CommonsXsdSchemaCollection
  * Plugin that introduces some conventions for creating Spring WS based, best practice
  * web services.
  *
+ * @author Dhiraj Mahapatro (dmahapatro@russmiles.com)
  * @author Russ Miles (russ@russmiles.com)
  * @author Ivo Houbrechts (ivo@houbrechts-it.be)
  * @author Tareq Abedrabbo (tareq.abedrabbo@gmail.com)
@@ -40,7 +46,6 @@ import org.springframework.xml.xsd.commons.CommonsXsdSchemaCollection
 class SpringwsGrailsPlugin {
     def version = "1.0.0"
     def grailsVersion = "2.0 > *"
-    //def dependsOn = [functionalTest:'1.2.5 > *']
     def pluginExcludes = [
             'grails-app/endpoints/*',
             'grails-app/conf/WsSecurityConfig.groovy',
@@ -61,7 +66,7 @@ class SpringwsGrailsPlugin {
     def artefacts = [EndpointArtefactHandler, InterceptorsConfigArtefactHandler, WsSecurityConfigArtefactHandler]
     def watchedResources = ["file:./grails-app/endpoints/**/*",
             "file:./grails-app/conf/*WsSecurityConfig.groovy"]
-    def loadAfter = ['acegi']
+    def loadAfter = ['springSecurityCore']
 
     def log = LogFactory.getLog(SpringwsGrailsPlugin)
 
@@ -134,15 +139,28 @@ class SpringwsGrailsPlugin {
             bean.call()
         }
 
-        // if Spring Security is installed, add access decision beans
-        def foundAcegi = Holders.getPluginManager()?.hasGrailsPlugin('acegi')
-        if (foundAcegi) {
-            wsSecurityRoleVoter(SpringwsGrailsPlugin.classLoader.loadClass('org.springframework.security.vote.RoleVoter')) {}
-            wsSecurityAccessDecisionManager(SpringwsGrailsPlugin.classLoader.loadClass('org.springframework.security.vote.AffirmativeBased')) {
-                decisionVoters = [wsSecurityRoleVoter]
-            }
-            wsSecurityObjectDefinitionSource(WebServiceInvocationDefinitionSource) {}
-        }
+			 def hasSpringSecurity = Holders.getPluginManager()?.hasGrailsPlugin('spring-security-core') || Holders.getPluginManager()?.hasGrailsPlugin('acegi')
+			 String roleVoterClass
+			 String affirmativeBased
+
+			 if (Holders.getPluginManager()?.hasGrailsPlugin('spring-security-core')){
+				 log.debug "detected installed Spring-Security-Core 2.x plugin"
+				 roleVoterClass = "org.springframework.security.access.vote.RoleVoter"
+				 affirmativeBased = "org.springframework.security.access.vote.AffirmativeBased"
+			 } else if (Holders.getPluginManager()?.hasGrailsPlugin('acegi')) {
+				 log.debug "detected installed Spring-Security-Core 1.x plugin"
+				 roleVoterClass = "org.springframework.security.vote.RoleVoter"
+				 affirmativeBased = "org.springframework.security.vote.AffirmativeBased"
+			 }
+			 if (hasSpringSecurity){
+				 //
+				 wsSecurityRoleVoter(SpringwsGrailsPlugin.classLoader.loadClass(roleVoterClass)) {}
+				 wsSecurityAccessDecisionManager(SpringwsGrailsPlugin.classLoader.loadClass(affirmativeBased)) {
+					 decisionVoters = [wsSecurityRoleVoter]
+				 }
+				 wsSecurityObjectDefinitionSource(WebServiceInvocationDefinitionSource) {}
+			 }
+
 
         // Add each of the interceptors
         for (interceptorsClass in application.getArtefacts(InterceptorsConfigArtefactHandler.TYPE)) {
@@ -204,20 +222,20 @@ class SpringwsGrailsPlugin {
             }
         }
 
-        def foundAcegi = Holders.getPluginManager()?.hasGrailsPlugin('acegi')
-        def acegiActive
-        def acegiConfig
-        def foundSecurityBeans = foundAcegi && applicationContext.authenticationManager && applicationContext.userDetailsService && applicationContext.userCache
+        def foundSpringSecurity = Holders.getPluginManager()?.hasGrailsPlugin('spring-security-core')
+        def springSecActive
+        def springSecConfig
+        def foundSecurityBeans = foundSpringSecurity && applicationContext.authenticationManager && applicationContext.userDetailsService && applicationContext.userCache
         def authenticationManager, userDetailsService, userCache, accessDecisionManager, objectDefinitionSource
-        if (foundAcegi) {
-            log.debug 'Found Spring Security (acegi plugin)'
+        if (foundSpringSecurity) {
+            log.debug 'Found Spring Security Core plugin'
 
-            //loading acegi plugin config
-            acegiConfig = SpringwsGrailsPlugin.classLoader.loadClass('org.codehaus.groovy.grails.plugins.springsecurity.AuthorizeTools').securityConfig.security
-            // checking whether acegi plugin is active
-            acegiActive = acegiConfig?.active
+            //loading spring security plugin config
+            springSecConfig = SpringSecurityUtils.securityConfig
+            // checking whether Spring Security plugin is active
+            springSecActive = springSecConfig?.active
 
-            if (acegiActive) {
+            if (springSecActive) {
                 log.debug 'Spring Security plugin is active.'
 
                 if (foundSecurityBeans) {
@@ -230,13 +248,13 @@ class SpringwsGrailsPlugin {
                     log.debug "Using userDetailsService: $userDetailsService"
                     log.debug "Using userCache: $userCache"
                     log.debug "Using accessDecisionManager: $accessDecisionManager"
-                    log.debug "Using objectDefinitionSource: $objectDefinitionSource"
+                    log.debug "Using securityMetadataSource: $objectDefinitionSource"
 
                     //TODO add checks on the type of configured authorization
-                    objectDefinitionSource.urlMatcher = applicationContext.filterInvocationInterceptor.objectDefinitionSource.urlMatcher
+                    objectDefinitionSource.urlMatcher = ((InterceptUrlMapFilterInvocationDefinition)applicationContext.filterInvocationInterceptor.securityMetadataSource).getUrlMatcher()
 
-                    // copy urls that start with /services/ to our objectDefinitionSource
-                    if (!acegiConfig.useRequestMapDomainClass && acegiConfig.requestMapString) {
+                    // copy urls that start with /services/ to our securityMetadataSource
+                    if (!springSecConfig.useRequestMapDomainClass && springSecConfig.requestMapString) {
                         log.debug 'Using requestMapString for authorization.'
                         applicationContext.filterInvocationInterceptor.objectDefinitionSource.requestMap.each {
                             if (it.key.startsWith('/services/')) {
@@ -262,13 +280,13 @@ class SpringwsGrailsPlugin {
                     log.debug "Excluded /services/** from the security filter chain. Resulting mapping: ${filterChain.filterChainMap}"
                 } else {
                     //TODO better message: suggest running the create-auth-domains script
-                    log.warn 'Security beans not found. Make sure the acegi plugin is active and the authentication domain is generated.'
+                    log.warn 'Security beans not found. Make sure the Spring Security Core plugin is active and the authentication domain is generated.'
                 }
             } else {
-                log.debug "Spring Security plugin is not active."
+                log.debug "Spring Security Core plugin is not active."
             }
         } else {
-            log.debug 'Spring Security plugin not found.'
+            log.debug 'Spring Security Core plugin not found.'
         }
 
         log.debug("Reloading security config")
@@ -285,7 +303,7 @@ class SpringwsGrailsPlugin {
                 params['userDetailsService'] = userDetailsService
                 params['userCache'] = userCache
                 params['accessDecisionManager'] = accessDecisionManager
-                params['objectDefinitionSource'] = objectDefinitionSource
+                params['securityMetadataSource'] = objectDefinitionSource
             }
 
             def securityInterceptor = WsSecurityConfigFactory.createInterceptor(params)

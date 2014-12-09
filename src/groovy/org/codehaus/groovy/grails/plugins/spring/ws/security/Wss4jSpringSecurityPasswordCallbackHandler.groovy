@@ -16,28 +16,31 @@
 
 package org.codehaus.groovy.grails.plugins.spring.ws.security
 
-import java.io.IOException
+import org.springframework.security.authentication.AuthenticationManager
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken
+import org.springframework.security.core.Authentication
+import org.springframework.security.core.AuthenticationException
+import org.springframework.security.core.context.SecurityContextHolder
+import org.springframework.security.core.userdetails.UserCache
+import org.springframework.security.core.userdetails.UserDetails
+import org.springframework.security.core.userdetails.UserDetailsService
+import org.springframework.security.core.userdetails.UsernameNotFoundException
+
 import javax.security.auth.callback.UnsupportedCallbackException
 
+import org.apache.commons.logging.LogFactory
 import org.apache.ws.security.WSPasswordCallback
 import org.apache.ws.security.WSUsernameTokenPrincipal
 import org.apache.ws.security.WSSecurityException
 
+import org.codehaus.groovy.grails.web.util.WebUtils
+
 import org.springframework.dao.DataAccessException
-import org.springframework.security.*
-import org.springframework.security.context.SecurityContextHolder
-import org.springframework.security.intercept.ObjectDefinitionSource
-import org.springframework.security.providers.UsernamePasswordAuthenticationToken
-import org.springframework.security.providers.dao.UserCache
-import org.springframework.security.providers.dao.cache.NullUserCache
-import org.springframework.security.userdetails.UserDetails
-import org.springframework.security.userdetails.UserDetailsService
-import org.springframework.security.userdetails.UsernameNotFoundException
+import org.springframework.security.access.*
 import org.springframework.ws.soap.security.callback.CleanupCallback
 import org.springframework.ws.soap.security.wss4j.callback.AbstractWsPasswordCallbackHandler
-import org.apache.commons.logging.LogFactory
 import org.springframework.ws.soap.security.wss4j.callback.UsernameTokenPrincipalCallback
-import org.codehaus.groovy.grails.web.util.WebUtils
+
 
 /**
  * A Wss4J callback handler that intergates with Spring Security.
@@ -53,7 +56,7 @@ class Wss4jSpringSecurityPasswordCallbackHandler extends AbstractWsPasswordCallb
     UserDetailsService userDetailsService
     AuthenticationManager authenticationManager
     AccessDecisionManager accessDecisionManager
-    ObjectDefinitionSource objectDefinitionSource
+	  SecurityMetadataSource securityMetadataSource
 
     // handle plain text passwords
     protected void handleUsernameTokenUnknown(WSPasswordCallback callback)
@@ -72,10 +75,10 @@ class Wss4jSpringSecurityPasswordCallbackHandler extends AbstractWsPasswordCallb
         }
         try {
             def request = WebUtils.retrieveGrailsWebRequest()
-            def attributes = objectDefinitionSource.getAttributes(request)
+            def attributes = securityMetadataSource.getAttributes(request)
             log.debug "attributes for $request= ${attributes?.dump()}"
             if(attributes) {
-                accessDecisionManager.decide(authResult, request, objectDefinitionSource.getAttributes(request))
+                accessDecisionManager.decide(authResult, request, securityMetadataSource.getAttributes(request))
                 log.debug "Authorization success for $authResult"
             }
         }

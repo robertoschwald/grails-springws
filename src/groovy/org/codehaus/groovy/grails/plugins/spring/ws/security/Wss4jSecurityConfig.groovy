@@ -109,7 +109,7 @@ class Wss4jValidationVisitor {
                 if (authenticationManager && userDetailsService && userCache && accessDecisionManager) {
                     interceptor.validationCallbackHandler = new Wss4jSpringSecurityPasswordCallbackHandler(
                             authenticationManager: authenticationManager, userDetailsService: userDetailsService,
-                            userCache: userCache, accessDecisionManager: accessDecisionManager, objectDefinitionSource: objectDefinitionSource)
+                            userCache: userCache, accessDecisionManager: accessDecisionManager, securityMetadataSource: objectDefinitionSource)
                 }
                 else {
                     throw new IllegalArgumentException('Spring Security beans not found. Make sure acegi plugin is installed.')
